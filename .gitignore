@@ -1,0 +1,47 @@
+# Ses dosyalari
+*.wav
+
+# Veri, model agirliklari, harici depolar
+checkpoints/
+data/
+models/
+ema-lightning/
+github/
+
+# Egitim verileri ve ciktilari
+test-output/
+*.log
+*.jsonl
+*.parquet
+*.csv
+*.pt
+*.f32
+
+# Yedekler
+*.bck
+
+# Python ortamlari
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+
+# .NET varsayilan
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# Rust / Visual Studio (native derleme ciktilari)
+target/
+Debug/
+Release/
+x64/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll

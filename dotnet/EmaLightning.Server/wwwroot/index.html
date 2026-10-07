@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YAPZEK - AKA TTS- 24Khz test</title>
+  <style>
+    :root { --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --text: #e6e8ee; --muted: #8b93a7; --accent: #7c5cff; --ok: #3fb950; --err: #f85149; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 820px; margin: 0 auto; padding: 32px 16px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+    label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 6px; }
+    textarea { width: 100%; min-height: 140px; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 12px; font: inherit; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 16px; }
+    .row > div { flex: 1 1 160px; }
+    input, select { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; }
+    .actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+    button { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 8px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; background: var(--accent); color: #fff; }
+    button.secondary { background: transparent; border: 1px solid var(--line); color: var(--text); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; display: none; }
+    button.busy .spinner { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    audio { width: 100%; margin-top: 20px; }
+    #status { margin-top: 16px; font-size: 14px; color: var(--muted); min-height: 21px; }
+    #status.ok { color: var(--ok); } #status.err { color: var(--err); }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>YAPZEK - AKA TTS- 24Khz test (CPU - onnx) base - EMA Lightning</h1>
+  <p class="sub">Turkish text to speech · ONNX Runtime on CPU</p>
+  <div class="panel">
+    <label for="text">Text</label>
+    <textarea id="text">Merhaba! Bu ses siz dinlerken üretiliyor. 15 Ekim 2026 Çarşamba günü saat 14:30'da, 1.250.000 TL tutarındaki ödemeniz hesabınıza yatırılacak.</textarea>
+    <div class="row">
+      <div>
+        <label for="speed">Speed (0.25 – 4)</label>
+        <input id="speed" type="number" min="0.25" max="4" step="0.05" value="1">
+      </div>
+      <div>
+        <label for="seed">Seed (empty = random)</label>
+        <input id="seed" type="number" min="0" step="1" placeholder="random">
+      </div>
+      <div>
+        <label for="rate">Sample rate</label>
+        <select id="rate">
+          <option value="48000" selected>48000 Hz</option>
+          <option value="24000">24000 Hz</option>
+          <option value="16000">16000 Hz</option>
+          <option value="8000">8000 Hz</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="speaker">Speaker (model)</label>
+        <select id="speaker"></select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="voice">Pitch / formant preset</label>
+        <select id="voice">
+          <option value="female" selected>Female (original)</option>
+          <option value="male">Male</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div>
+        <label for="pitch">Pitch (0.5 – 2)</label>
+        <input id="pitch" type="number" min="0.5" max="2" step="0.01" value="1">
+      </div>
+      <div>
+        <label for="formant">Formant (0.7 – 1.4)</label>
+        <input id="formant" type="number" min="0.7" max="1.4" step="0.01" value="1">
+      </div>
+      <div>
+        <label for="method">Method</label>
+        <select id="method">
+          <option value="harvest" selected>WORLD · Harvest</option>
+          <option value="dio">WORLD · DIO</option>
+          <option value="psola">PSOLA</option>
+        </select>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="speak"><span class="spinner"></span><span class="label">Speak</span></button>
+      <button id="stream"><span class="spinner"></span><span class="label">Stream</span></button>
+      <button id="stop" class="secondary" disabled>Stop</button>
+    </div>
+    <audio id="player" controls></audio>
+    <div id="status"></div>
+    <div id="download"></div>
+  </div>
+</main>
+<script>
+  const $ = id => document.getElementById(id);
+  const speakButton = $("speak"), streamButton = $("stream"), stopButton = $("stop");
+  let socket = null, context = null;
+
+  fetch("/voices").then(r => r.json()).then(data => {
+    for (const name of data.speakers) {
+      const option = new Option(name.charAt(0).toUpperCase() + name.slice(1), name, false, name === data.default);
+      $("speaker").add(option);
+    }
+  });
+
+  const voices = { female: { pitch: 1, formant: 1 }, male: { pitch: 0.5, formant: 0.86 } };
+  $("voice").onchange = () => {
+    const voice = voices[$("voice").value];
+    if (voice) { $("pitch").value = voice.pitch; $("formant").value = voice.formant; }
+  };
+  $("pitch").oninput = $("formant").oninput = () => { $("voice").value = "custom"; };
+
+  function request() {
+    const body = {
+      text: $("text").value, speed: parseFloat($("speed").value) || 1, sample_rate: parseInt($("rate").value, 10),
+      pitch: parseFloat($("pitch").value) || 1, formant: parseFloat($("formant").value) || 1,
+      method: $("method").value, speaker: $("speaker").value,
+    };
+    const seed = $("seed").value.trim();
+    if (seed !== "") body.seed = parseInt(seed, 10);
+    return body;
+  }
+
+  function status(message, kind = "") {
+    $("status").textContent = message;
+    $("status").className = kind;
+  }
+
+  function busy(button, on, text) {
+    button.classList.toggle("busy", on);
+    button.querySelector(".label").textContent = text;
+    speakButton.disabled = streamButton.disabled = on;
+    stopButton.disabled = !on || button !== streamButton;
+  }
+
+  speakButton.onclick = async () => {
+    busy(speakButton, true, "Generating…");
+    status("");
+    $("download").innerHTML = "";
+    const started = performance.now();
+    try {
+      const response = await fetch("/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request()) });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(error.error || response.statusText);
+      }
+      const blob = await response.blob();
+      const elapsed = performance.now() - started;
+      const url = URL.createObjectURL(blob);
+      $("player").src = url;
+      await $("player").play().catch(() => {});
+      const seconds = (blob.size - 44) / 2 / parseInt($("rate").value, 10);
+      status(`${seconds.toFixed(2)} s of audio in ${Math.round(elapsed)} ms`, "ok");
+      $("download").innerHTML = `<a href="${url}" download="speech.wav">Download WAV</a>`;
+    } catch (error) {
+      status(`Error: ${error.message}`, "err");
+    } finally {
+      busy(speakButton, false, "Speak");
+    }
+  };
+
+  streamButton.onclick = () => {
+    const body = request();
+    const rate = body.sample_rate;
+    busy(streamButton, true, "Streaming…");
+    status("Connecting…");
+    $("download").innerHTML = "";
+    $("player").pause();
+    context = new AudioContext({ sampleRate: rate });
+    let next = context.currentTime + 0.05, first = null, samples = 0;
+    const started = performance.now();
+    socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/speak`);
+    socket.binaryType = "arraybuffer";
+    socket.onopen = () => { socket.send(JSON.stringify(body)); status("Generating…"); };
+    socket.onmessage = event => {
+      const chunk = new Float32Array(event.data);
+      if (first === null) first = performance.now() - started;
+      samples += chunk.length;
+      const buffer = context.createBuffer(1, chunk.length, rate);
+      buffer.copyToChannel(chunk, 0);
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(context.destination);
+      next = Math.max(next, context.currentTime);
+      source.start(next);
+      next += buffer.duration;
+      status(`First chunk in ${Math.round(first)} ms · ${(samples / rate).toFixed(2)} s received`, "ok");
+    };
+    socket.onclose = event => {
+      if (event.code !== 1000 && event.code !== 1005) {
+        status(`Error: ${event.reason || "connection closed (" + event.code + ")"}`, "err");
+      } else if (first !== null) {
+        status(`First chunk in ${Math.round(first)} ms · ${(samples / rate).toFixed(2)} s of audio in ${Math.round(performance.now() - started)} ms`, "ok");
+      }
+      socket = null;
+      busy(streamButton, false, "Stream");
+    };
+    socket.onerror = () => status("Error: WebSocket connection failed", "err");
+  };
+
+  stopButton.onclick = () => {
+    if (socket) socket.close();
+    if (context) { context.close(); context = null; }
+    status("Stopped");
+  };
+</script>
+</body>
+</html>

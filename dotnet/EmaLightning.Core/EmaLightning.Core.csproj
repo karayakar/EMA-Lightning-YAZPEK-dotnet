@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>EmaLightning</RootNamespace>
+    <AssemblyName>EmaLightning.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.26.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EmaLightning.Normalizer\EmaLightning.Normalizer.csproj" />
+  </ItemGroup>
+
+  <!-- WORLD ses dönüştürücü (native\world_shift\build.bat ile derlenir) -->
+  <ItemGroup>
+    <None Include="..\..\native\world_shift\bin\world_shift.dll" Link="world_shift.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\github\World\LICENSE.txt" Link="WORLD-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
